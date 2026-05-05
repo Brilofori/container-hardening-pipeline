@@ -1,0 +1,11 @@
+{
+  "max_critical_cves": 0,
+  "max_high_cves": 5,
+  "forbidden_packages": ["telnet", "ftp", "python2", "net-tools"],
+  "required_nonroot": true,
+  "forbidden_volumes": ["/etc"],
+  "min_base_image": "debian:12"
+}
+
+
+
