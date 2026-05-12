@@ -1,18 +1,14 @@
 import json
 import sys
-import re
 
-# ── Load standards ──────────────────────────────────────────
 def load_standards(filepath="standards.json"):
     with open(filepath) as f:
         return json.load(f)
 
-# ── Load Trivy results ───────────────────────────────────────
 def load_trivy(filepath):
     with open(filepath) as f:
         return json.load(f)
 
-# ── Reactive: find vulnerable packages from scan ─────────────
 def get_vulnerable_packages(data, severities=["CRITICAL", "HIGH"]):
     packages = []
     counts = {"CRITICAL": 0, "HIGH": 0}
@@ -26,47 +22,40 @@ def get_vulnerable_packages(data, severities=["CRITICAL", "HIGH"]):
                     packages.append(pkg)
     return packages, counts
 
-# ── Check standards compliance ───────────────────────────────
 def check_standards(dockerfile_lines, trivy_counts, standards):
     results = {}
 
-    # Check 1 — critical CVE count
     critical = trivy_counts.get("CRITICAL", 0)
     results["max_critical_cves"] = {
         "pass": critical <= standards["max_critical_cves"],
         "detail": f"Found {critical} critical CVEs (max allowed: {standards['max_critical_cves']})"
     }
 
-    # Check 2 — high CVE count
     high = trivy_counts.get("HIGH", 0)
     results["max_high_cves"] = {
         "pass": high <= standards["max_high_cves"],
         "detail": f"Found {high} high CVEs (max allowed: {standards['max_high_cves']})"
     }
 
-    # Check 3 — nonroot user
-    has_user = any(line.strip().startswith("USER") and "root" not in line for line in dockerfile_lines)
+    has_user = any(l.strip() == "USER nonroot" for l in dockerfile_lines)
     results["required_nonroot"] = {
         "pass": has_user,
         "detail": "Non-root USER directive found" if has_user else "Container runs as root"
     }
 
-    # Check 4 — forbidden packages
     dockerfile_text = " ".join(dockerfile_lines)
     found_forbidden = [pkg for pkg in standards["forbidden_packages"] if pkg in dockerfile_text]
     results["forbidden_packages"] = {
         "pass": len(found_forbidden) == 0,
-        "detail": f"Forbidden packages removed" if not found_forbidden else f"Forbidden packages still present: {found_forbidden}"
+        "detail": "Forbidden packages removed" if not found_forbidden else f"Forbidden packages still present: {found_forbidden}"
     }
 
-    # Check 5 — forbidden volumes
     found_volumes = [vol for vol in standards["forbidden_volumes"] if any(vol in line for line in dockerfile_lines)]
     results["forbidden_volumes"] = {
         "pass": len(found_volumes) == 0,
         "detail": "No sensitive volumes exposed" if not found_volumes else f"Sensitive volumes exposed: {found_volumes}"
     }
 
-    # Check 6 — base image
     from_line = next((l for l in dockerfile_lines if l.strip().startswith("FROM")), "")
     correct_base = standards["min_base_image"] in from_line
     results["min_base_image"] = {
@@ -76,7 +65,6 @@ def check_standards(dockerfile_lines, trivy_counts, standards):
 
     return results
 
-# ── Apply fixes ─────────────────────────────────────────────
 def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
     new_lines = []
     fixes = []
@@ -86,19 +74,16 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
     for line in dockerfile_lines:
         stripped = line.strip()
 
-        # Fix 1 — update base image
         if stripped.startswith("FROM") and standards["min_base_image"] not in line:
             new_lines.append(f"FROM {standards['min_base_image']}\n")
             fixes.append(f"Updated base image to {standards['min_base_image']}")
             continue
 
-        # Detect start of apt-get install block
         if "apt-get install" in line or "apt install" in line:
             in_apt_block = True
             new_lines.append(line)
             continue
 
-        # Inside apt-get install block — check each package line
         if in_apt_block:
             pkg_name = stripped.rstrip('\\').strip()
             if pkg_name in all_to_remove:
@@ -111,7 +96,6 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
             new_lines.append(line)
             continue
 
-        # Fix 3 — remove sensitive volumes
         if stripped.startswith("VOLUME"):
             for vol in standards["forbidden_volumes"]:
                 if vol in line:
@@ -121,15 +105,13 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
                 new_lines.append(line)
             continue
 
-        # Fix 4 — remove USER root line
         if stripped == "USER root":
             fixes.append("Removed USER root directive")
             continue
 
         new_lines.append(line)
 
-    # Fix 5 — add nonroot user if missing
-    has_nonroot = any("USER" in l and "root" not in l for l in new_lines)
+    has_nonroot = any(l.strip() == "USER nonroot" for l in new_lines)
     if standards["required_nonroot"] and not has_nonroot:
         new_lines.append("\nRUN useradd -m nonroot\n")
         new_lines.append("USER nonroot\n")
@@ -137,7 +119,6 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
 
     return new_lines, fixes
 
-# ── Print standards report ───────────────────────────────────
 def print_standards_report(label, results):
     print(f"\n{'='*50}")
     print(f" STANDARDS COMPLIANCE REPORT — {label}")
@@ -151,7 +132,6 @@ def print_standards_report(label, results):
         print(f"       {result['detail']}")
     print(f"{'='*50}\n")
 
-# ── Main ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python3 harden.py <trivy_json> <dockerfile>")
@@ -167,11 +147,9 @@ if __name__ == "__main__":
     with open(dockerfile_path) as f:
         dockerfile_lines = f.readlines()
 
-    # Check standards BEFORE hardening
     before_results = check_standards(dockerfile_lines, trivy_counts, standards)
     print_standards_report("BEFORE HARDENING", before_results)
 
-    # Apply fixes
     print("Applying fixes...\n")
     new_lines, fixes = apply_fixes(dockerfile_lines, vulnerable_packages, standards)
 
@@ -179,7 +157,6 @@ if __name__ == "__main__":
     for fix in fixes:
         print(f"  + {fix}")
 
-    # Save hardened Dockerfile
     hardened_path = dockerfile_path.replace("Dockerfile", "Dockerfile.hardened")
     with open(hardened_path, "w") as f:
         f.writelines(new_lines)
