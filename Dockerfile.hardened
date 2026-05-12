@@ -1,14 +1,19 @@
 FROM debian:12
 
-# Install only necessary packages
+# Point to archived repositories since debian:10 is EOL
+
+# Deliberately install vulnerable and unnecessary packages for testing
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# Run as non-root user
-RUN useradd -m nonroot
-USER nonroot
+# Insecure — container runs as root
+
+# Insecure — exposes sensitive directory
 
 CMD ["/bin/bash"]
+
+RUN useradd -m nonroot
+USER nonroot

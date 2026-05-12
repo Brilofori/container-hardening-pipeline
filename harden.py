@@ -70,32 +70,53 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
     fixes = []
     all_to_remove = list(set(standards["forbidden_packages"] + vulnerable_packages))
     in_apt_block = False
+    skip_run_block = False
 
     for line in dockerfile_lines:
         stripped = line.strip()
 
+        # Skip debian:10 archive repository lines
+        if "archive.debian.org" in line or "buster-updates" in line:
+            continue
+
+        # Skip the RUN sed block that fixes debian:10 repos
+        if stripped.startswith("RUN sed") and "deb.debian.org" in line:
+            skip_run_block = True
+            continue
+
+        if skip_run_block:
+            if line.rstrip().endswith("\\"):
+                continue
+            else:
+                skip_run_block = False
+                continue
+
+        # Fix 1 — update base image
         if stripped.startswith("FROM") and standards["min_base_image"] not in line:
             new_lines.append(f"FROM {standards['min_base_image']}\n")
             fixes.append(f"Updated base image to {standards['min_base_image']}")
             continue
 
+        # Fix 2 — detect apt-get install block
         if "apt-get install" in line or "apt install" in line:
             in_apt_block = True
             new_lines.append(line)
             continue
 
+        # Fix 2 continued — remove forbidden packages inside block
         if in_apt_block:
-            pkg_name = stripped.rstrip('\\').strip()
+            pkg_name = stripped.rstrip("\\").strip()
             if pkg_name in all_to_remove:
                 fixes.append(f"Removed package: {pkg_name}")
-                if not line.rstrip().endswith('\\'):
+                if not line.rstrip().endswith("\\"):
                     in_apt_block = False
                 continue
-            if not line.rstrip().endswith('\\') and pkg_name != '&&':
+            if not line.rstrip().endswith("\\") and pkg_name != "&&":
                 in_apt_block = False
             new_lines.append(line)
             continue
 
+        # Fix 3 — remove sensitive volumes
         if stripped.startswith("VOLUME"):
             for vol in standards["forbidden_volumes"]:
                 if vol in line:
@@ -105,12 +126,14 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
                 new_lines.append(line)
             continue
 
+        # Fix 4 — remove USER root
         if stripped == "USER root":
             fixes.append("Removed USER root directive")
             continue
 
         new_lines.append(line)
 
+    # Fix 5 — add nonroot user if missing
     has_nonroot = any(l.strip() == "USER nonroot" for l in new_lines)
     if standards["required_nonroot"] and not has_nonroot:
         new_lines.append("\nRUN useradd -m nonroot\n")
@@ -163,3 +186,4 @@ if __name__ == "__main__":
 
     print(f"\n Hardened Dockerfile saved to: {hardened_path}")
     print(" Rebuild the image then re-run standards check to verify improvement.")
+
