@@ -40,9 +40,7 @@ echo "[4/5] Scanning hardened image..."
 # Step 5 — Summary
 echo ""
 echo "[5/5] Generating before and after summary..."
-python3 summarise.py results/trivy_before.json results/grype_before.json "BEFORE HARDENING"
-python3 summarise.py results/trivy_after.json results/grype_after.json "AFTER HARDENING"
-
+python3 summarise.py results/trivy_before.json results/trivy_after.json results/grype_before.json results/grype_after.json
 # Standards verification on hardened image
 echo ""
 echo "Verifying standards compliance on hardened image..."
@@ -54,4 +52,3 @@ echo "================================================"
 echo " PIPELINE COMPLETE"
 echo " Check results/ folder for full scan output"
 echo "================================================"
-

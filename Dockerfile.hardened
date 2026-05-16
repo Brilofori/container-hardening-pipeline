@@ -1,6 +1,6 @@
 FROM debian:12
 
-# Point to archived repositories since debian:10 is EOL
+# Point to archived repositories since debian:9 is EOL
 
 # Deliberately install vulnerable and unnecessary packages for testing
 RUN apt-get update && apt-get install -y \
@@ -9,11 +9,9 @@ RUN apt-get update && apt-get install -y \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# Insecure — container runs as root
 
-# Insecure — exposes sensitive directory
 
-CMD ["/bin/bash"]
 
 RUN useradd -m nonroot
 USER nonroot
+CMD ["/bin/bash"]

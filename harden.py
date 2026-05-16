@@ -50,7 +50,7 @@ def check_standards(dockerfile_lines, trivy_counts, standards):
         "detail": "Forbidden packages removed" if not found_forbidden else f"Forbidden packages still present: {found_forbidden}"
     }
 
-    found_volumes = [vol for vol in standards["forbidden_volumes"] if any(vol in line for line in dockerfile_lines)]
+    found_volumes = [vol for vol in standards["forbidden_volumes"] if any(vol in line for line in dockerfile_lines if not line.strip().startswith("#"))]
     results["forbidden_volumes"] = {
         "pass": len(found_volumes) == 0,
         "detail": "No sensitive volumes exposed" if not found_volumes else f"Sensitive volumes exposed: {found_volumes}"
@@ -70,26 +70,31 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
     fixes = []
     all_to_remove = list(set(standards["forbidden_packages"] + vulnerable_packages))
     in_apt_block = False
-    skip_run_block = False
+    skip_block = False
+    cmd_line = None
 
     for line in dockerfile_lines:
         stripped = line.strip()
 
-        # Skip debian:10 archive repository lines
-        if "archive.debian.org" in line or "buster-updates" in line:
+        # Skip comment lines containing sensitive paths
+        if stripped.startswith("#"):
+            # Only keep comments that don't reference insecure configs
+            if "insecure" not in stripped.lower() and "/etc" not in stripped:
+                new_lines.append(line)
             continue
 
-        # Skip the RUN sed block that fixes debian:10 repos
-        if stripped.startswith("RUN sed") and "deb.debian.org" in line:
-            skip_run_block = True
+        # Skip entire RUN sed archive block
+        if stripped.startswith("RUN sed") or (skip_block and stripped.startswith("sed")):
+            skip_block = line.rstrip().endswith("\\")
             continue
 
-        if skip_run_block:
-            if line.rstrip().endswith("\\"):
-                continue
-            else:
-                skip_run_block = False
-                continue
+        # Skip orphaned sed lines
+        if stripped.startswith("sed"):
+            continue
+
+        if skip_block:
+            skip_block = line.rstrip().endswith("\\")
+            continue
 
         # Fix 1 — update base image
         if stripped.startswith("FROM") and standards["min_base_image"] not in line:
@@ -103,7 +108,7 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
             new_lines.append(line)
             continue
 
-        # Fix 2 continued — remove forbidden packages inside block
+        # Fix 2 continued — remove forbidden packages
         if in_apt_block:
             pkg_name = stripped.rstrip("\\").strip()
             if pkg_name in all_to_remove:
@@ -131,6 +136,11 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
             fixes.append("Removed USER root directive")
             continue
 
+        # Hold CMD until end so it stays last
+        if stripped.startswith("CMD"):
+            cmd_line = line
+            continue
+
         new_lines.append(line)
 
     # Fix 5 — add nonroot user if missing
@@ -140,7 +150,12 @@ def apply_fixes(dockerfile_lines, vulnerable_packages, standards):
         new_lines.append("USER nonroot\n")
         fixes.append("Added non-root user and switched to nonroot")
 
+    # Add CMD last
+    if cmd_line:
+        new_lines.append(cmd_line)
+
     return new_lines, fixes
+
 
 def print_standards_report(label, results):
     print(f"\n{'='*50}")
