@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # Container Security Scan Pipeline
-# Usage: ./scan.sh <image-name> <output-prefix>
-# Example: ./scan.sh vulnerable-app:before before
+# scan.sh
 
 TARGET=$1
 PREFIX=$2
