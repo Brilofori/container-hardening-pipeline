@@ -1,0 +1,16 @@
+FROM debian:12
+
+# Point to archived repositories since debian:9 is EOL
+
+# Deliberately install vulnerable and unnecessary packages for testing
+RUN apt-get update && apt-get install -y \
+    wget \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+
+RUN useradd -m nonroot
+USER nonroot
+CMD ["/bin/bash"]

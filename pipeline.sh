@@ -20,7 +20,7 @@ echo "================================================"
 # Step 1 — Before scan
 echo ""
 echo "[1/5] Scanning original image..."
-./scan.sh $TARGET before
+./scan.sh debian:9 before
 
 # Step 2 — Apply hardening
 echo ""
@@ -45,7 +45,7 @@ python3 summarise.py results/trivy_before.json results/trivy_after.json results/
 echo ""
 echo "Verifying standards compliance on hardened image..."
 echo '{"Results": []}' > results/trivy_after_empty.json
-python3 harden.py results/trivy_after_empty.json Dockerfile.hardened
+python3 harden.py results/trivy_after.json Dockerfile.hardened
 
 echo ""
 echo "================================================"
